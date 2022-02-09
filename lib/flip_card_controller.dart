@@ -15,6 +15,14 @@ class FlipCardController {
   /// Flip the card
   void toggleCard() => state?.toggleCard();
 
+  /// Wiggle the card to indicate that the card can
+  /// be flipped. Starts and ends at 0 (initial state)
+  /// * [duration] is optional, if not passed, will use the [FlipCard.speed]
+  /// defined on the [FlipCard] widget.
+  /// If awaited, returns after animation completes.
+  Future<void> wiggle({Duration? duration}) async =>
+      await state?.wiggle(duration);
+
   /// Skew by amount percentage (0 - 1.0)
   /// This can be used with a MouseReagion to indicate that the card can
   /// be flipped. skew(0) to go back to original.

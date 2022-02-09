@@ -4,19 +4,28 @@ import 'dart:math';
 import 'package:flip_card/flip_card_controller.dart';
 import 'package:flutter/material.dart';
 
-enum FlipDirection {
+enum FlipOrientation {
   VERTICAL,
   HORIZONTAL,
+}
+enum FlipDirection {
+  CLOCKWISE,
+  COUNTER_CLOCKWISE,
+}
+
+enum CardSide {
+  FRONT,
+  BACK,
 }
 
 enum Fill { none, fillFront, fillBack }
 
 class AnimationCard extends StatelessWidget {
-  AnimationCard({this.child, this.animation, this.direction});
+  AnimationCard({this.child, this.animation, this.orientation});
 
   final Widget? child;
   final Animation<double>? animation;
-  final FlipDirection? direction;
+  final FlipOrientation? orientation;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +34,7 @@ class AnimationCard extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         var transform = Matrix4.identity();
         transform.setEntry(3, 2, 0.001);
-        if (direction == FlipDirection.VERTICAL) {
+        if (orientation == FlipOrientation.VERTICAL) {
           transform.rotateX(animation!.value);
         } else {
           transform.rotateY(animation!.value);
@@ -49,6 +58,7 @@ class FlipCard extends StatefulWidget {
 
   /// The amount of milliseconds a turn animation will take.
   final int speed;
+  final FlipOrientation orientation;
   final FlipDirection direction;
   final VoidCallback? onFlip;
   final BoolCallback? onFlipDone;
@@ -89,7 +99,8 @@ class FlipCard extends StatefulWidget {
     this.speed = 500,
     this.onFlip,
     this.onFlipDone,
-    this.direction = FlipDirection.HORIZONTAL,
+    this.orientation = FlipOrientation.HORIZONTAL,
+    this.direction = FlipDirection.CLOCKWISE,
     this.controller,
     this.flipOnTouch = true,
     this.alignment = Alignment.center,
@@ -105,17 +116,23 @@ class FlipCard extends StatefulWidget {
 class FlipCardState extends State<FlipCard>
     with SingleTickerProviderStateMixin {
   AnimationController? controller;
-  Animation<double>? _frontRotation;
-  Animation<double>? _backRotation;
+  Animation<double>? _frontRotationCW;
+  Animation<double>? _frontRotationCCW;
+  Animation<double>? _backRotationCW;
+  Animation<double>? _backRotationCCW;
+  Animation<double>? _wiggle;
+  Animation<double>? _wiggleBack;
 
   bool isFront = true;
+  bool isWiggle = false;
 
   @override
   void initState() {
     super.initState();
     controller = AnimationController(
         duration: Duration(milliseconds: widget.speed), vsync: this);
-    _frontRotation = TweenSequence(
+
+    _frontRotationCW = TweenSequence(
       [
         TweenSequenceItem<double>(
           tween: Tween(begin: 0.0, end: pi / 2)
@@ -128,10 +145,25 @@ class FlipCardState extends State<FlipCard>
         ),
       ],
     ).animate(controller!);
-    _backRotation = TweenSequence(
+
+    _frontRotationCCW = TweenSequence(
       [
         TweenSequenceItem<double>(
-          tween: ConstantTween<double>(pi / 2),
+          tween: Tween(begin: 0.0, end: -pi / 2)
+              .chain(CurveTween(curve: Curves.easeIn)),
+          weight: 50.0,
+        ),
+        TweenSequenceItem<double>(
+          tween: ConstantTween<double>(-pi / 2),
+          weight: 50.0,
+        ),
+      ],
+    ).animate(controller!);
+
+    _backRotationCW = TweenSequence(
+      [
+        TweenSequenceItem<double>(
+          tween: ConstantTween<double>(-pi / 2),
           weight: 50.0,
         ),
         TweenSequenceItem<double>(
@@ -141,9 +173,54 @@ class FlipCardState extends State<FlipCard>
         ),
       ],
     ).animate(controller!);
+
+    _backRotationCCW = TweenSequence(
+      [
+        TweenSequenceItem<double>(
+          tween: ConstantTween<double>(pi / 2),
+          weight: 50.0,
+        ),
+        TweenSequenceItem<double>(
+          tween: Tween(begin: pi / 2, end: 0.0)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 50.0,
+        ),
+      ],
+    ).animate(controller!);
+
+    _wiggle = TweenSequence(
+      [
+        TweenSequenceItem<double>(
+          tween: Tween(begin: 0.0, end: -pi / 8)
+              .chain(CurveTween(curve: Curves.easeInOutCubic)),
+          weight: 50.0,
+        ),
+        TweenSequenceItem<double>(
+          tween: Tween(begin: -pi / 8, end: pi / 8)
+              .chain(CurveTween(curve: Curves.easeInOutCubic)),
+          weight: 50.0,
+        ),
+        TweenSequenceItem<double>(
+          tween: Tween(begin: pi / 8, end: 0.0)
+              .chain(CurveTween(curve: Curves.easeInOutCubic)),
+          weight: 50.0,
+        ),
+      ],
+    ).animate(controller!);
+
+    _wiggleBack = TweenSequence(
+      [
+        TweenSequenceItem<double>(
+          tween: ConstantTween<double>(pi / 2),
+          weight: 50.0,
+        ),
+      ],
+    ).animate(controller!);
+
     controller!.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
+      if ((status == AnimationStatus.completed ||
+              status == AnimationStatus.dismissed) &&
+          !isWiggle) {
         if (widget.onFlipDone != null) widget.onFlipDone!(isFront);
         setState(() {
           isFront = !isFront;
@@ -165,6 +242,23 @@ class FlipCardState extends State<FlipCard>
     } else {
       controller!.reverse();
     }
+  }
+
+  Future<void> wiggle(Duration? duration) async {
+    setState(() {
+      isWiggle = true;
+    });
+
+    controller!.duration = duration ?? Duration(milliseconds: widget.speed);
+
+    controller!.reset();
+    final animation = controller!.forward();
+    animation.whenComplete(() {
+      controller!.value = isFront ? 0.0 : 1.0;
+      setState(() {
+        isWiggle = false;
+      });
+    });
   }
 
   @override
@@ -200,9 +294,23 @@ class FlipCardState extends State<FlipCard>
       /// absorb the background when the front is active
       ignoring: front ? !isFront : isFront,
       child: AnimationCard(
-        animation: front ? _frontRotation : _backRotation,
+        animation: !isWiggle
+            ? front
+                ? widget.direction == FlipDirection.CLOCKWISE
+                    ? _frontRotationCW
+                    : _frontRotationCCW
+                : widget.direction == FlipDirection.CLOCKWISE
+                    ? _backRotationCW
+                    : _backRotationCCW
+            : isFront
+                ? front
+                    ? _wiggle
+                    : _wiggleBack
+                : front
+                    ? _wiggleBack
+                    : _wiggle,
         child: front ? widget.front : widget.back,
-        direction: widget.direction,
+        orientation: widget.orientation,
       ),
     );
   }
