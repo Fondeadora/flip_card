@@ -232,6 +232,8 @@ class FlipCardState extends State<FlipCard>
   }
 
   void toggleCard() {
+    isWiggle = false;
+
     if (widget.onFlip != null) {
       widget.onFlip!();
     }
